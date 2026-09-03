@@ -1,3 +1,10 @@
+// LocalStorage Keys
+const KEYS = {
+    PRODUCTS: 'pos_products',
+    SALES: 'pos_sales',
+    CASH_FLOW: 'pos_cash_flow'
+};
+
 // Global State
 let inventory = [];
 let cart = [];
@@ -12,6 +19,9 @@ document.addEventListener('DOMContentLoaded', () => {
     updateDateTime();
     setInterval(updateDateTime, 1000);
     
+    // Initial data load
+    loadDataFromStorage();
+
     // Navigation
     navLinks.forEach(link => {
         link.addEventListener('click', () => {
@@ -20,9 +30,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Load initial data
-    loadDashboardData();
-    
     // Modals
     document.getElementById('btn-add-product').addEventListener('click', () => openProductModal());
     document.querySelectorAll('.close-modal, .close-modal-btn').forEach(btn => {
@@ -41,6 +48,28 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-clear-cart').addEventListener('click', clearCart);
     document.getElementById('btn-checkout').addEventListener('click', processSale);
 });
+
+// Storage Functions
+function loadDataFromStorage() {
+    inventory = JSON.parse(localStorage.getItem(KEYS.PRODUCTS) || '[]');
+    // Ensure all products have IDs
+    inventory.forEach((p, i) => { if (!p.id) p.id = Date.now() + i; });
+    saveDataToStorage();
+    
+    loadInventory();
+    loadDashboardData();
+}
+
+function saveDataToStorage() {
+    localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(inventory));
+}
+
+function getSales() {
+    return JSON.parse(localStorage.getItem(KEYS.SALES) || '[]');
+}
+function getCashFlow() {
+    return JSON.parse(localStorage.getItem(KEYS.CASH_FLOW) || '[]');
+}
 
 function updateDateTime() {
     const now = new Date();
@@ -71,31 +100,44 @@ function switchView(viewId, activeLink) {
     }
 }
 
-// API Calls
-async function fetchAPI(endpoint, method = 'GET', body = null) {
-    try {
-        const options = { method, headers: { 'Content-Type': 'application/json' } };
-        if (body) options.body = JSON.stringify(body);
-        const res = await fetch(`/api/${endpoint}`, options);
-        if (!res.ok) throw new Error('API Error');
-        return await res.json();
-    } catch (err) {
-        showToast('Error de conexión con el servidor', 'error');
-        console.error(err);
-        return null;
-    }
-}
+// Dashboard Logic
+function loadDashboardData() {
+    // 1. Low stock alerts
+    const lowStockAlerts = inventory.filter(p => p.stock <= p.min_stock);
+    
+    // 2. Expiring soon (within 30 days)
+    const now = new Date();
+    const thirtyDays = new Date();
+    thirtyDays.setDate(thirtyDays.getDate() + 30);
+    
+    const expiringSoon = inventory.filter(p => {
+        if (!p.expiry_date) return false;
+        const expiryDate = new Date(p.expiry_date);
+        return expiryDate <= thirtyDays;
+    });
 
-async function loadDashboardData() {
-    const data = await fetchAPI('dashboard');
-    if(!data) return;
+    // 3. Today's sales
+    const todayStr = new Date().toISOString().split('T')[0];
+    const sales = getSales();
+    const todaysSales = sales.filter(s => s.created_at.startsWith(todayStr))
+                             .reduce((sum, s) => sum + s.total_amount, 0);
 
-    document.getElementById('dash-sales-today').innerText = `$${data.todays_sales.toFixed(2)}`;
-    document.getElementById('dash-cash-balance').innerText = `$${data.cash_balance.toFixed(2)}`;
-    document.getElementById('dash-stock-alerts').innerText = data.low_stock_alerts.length;
-    document.getElementById('dash-expiry-alerts').innerText = data.expiring_soon_alerts.length;
+    // 4. Cash Flow
+    const cashFlow = getCashFlow();
+    const todaysCashIn = cashFlow.filter(c => c.transaction_type === 'IN' && c.created_at.startsWith(todayStr))
+                                 .reduce((sum, c) => sum + c.amount, 0);
+    const todaysCashOut = cashFlow.filter(c => c.transaction_type === 'OUT' && c.created_at.startsWith(todayStr))
+                                  .reduce((sum, c) => sum + c.amount, 0);
+    
+    const cashBalance = todaysCashIn - todaysCashOut;
 
-    renderTable('low-stock-table', data.low_stock_alerts, (item) => `
+    // Update UI
+    document.getElementById('dash-sales-today').innerText = `$${todaysSales.toFixed(2)}`;
+    document.getElementById('dash-cash-balance').innerText = `$${cashBalance.toFixed(2)}`;
+    document.getElementById('dash-stock-alerts').innerText = lowStockAlerts.length;
+    document.getElementById('dash-expiry-alerts').innerText = expiringSoon.length;
+
+    renderTable('low-stock-table', lowStockAlerts, (item) => `
         <tr>
             <td>${item.name}</td>
             <td><span class="status-badge status-danger">${item.stock}</span></td>
@@ -103,7 +145,7 @@ async function loadDashboardData() {
         </tr>
     `);
 
-    renderTable('expiry-table', data.expiring_soon_alerts, (item) => `
+    renderTable('expiry-table', expiringSoon, (item) => `
         <tr>
             <td>${item.name}</td>
             <td><span class="status-badge status-warning">${item.expiry_date}</span></td>
@@ -112,13 +154,9 @@ async function loadDashboardData() {
     `);
 }
 
-async function loadInventory() {
-    const data = await fetchAPI('products');
-    if(data) {
-        inventory = data;
-        renderInventoryList(inventory);
-        renderPosProducts(inventory);
-    }
+function loadInventory() {
+    renderInventoryList(inventory);
+    renderPosProducts(inventory);
 }
 
 // Inventory Logic
@@ -171,10 +209,10 @@ function closeProductModal() {
     document.getElementById('product-modal').classList.remove('show');
 }
 
-async function handleProductSubmit(e) {
+function handleProductSubmit(e) {
     e.preventDefault();
     const id = document.getElementById('prod-id').value;
-    const data = {
+    const productData = {
         name: document.getElementById('prod-name').value,
         cost_price: parseFloat(document.getElementById('prod-cost').value),
         sale_price: parseFloat(document.getElementById('prod-price').value),
@@ -183,34 +221,38 @@ async function handleProductSubmit(e) {
         expiry_date: document.getElementById('prod-expiry').value
     };
 
-    let result;
     if (id) {
-        result = await fetchAPI(`products/${id}`, 'PUT', data);
+        // Edit existing
+        const index = inventory.findIndex(p => p.id == id);
+        if(index > -1) {
+            inventory[index] = { ...inventory[index], ...productData };
+            showToast('Producto actualizado', 'success');
+        }
     } else {
-        result = await fetchAPI('products', 'POST', data);
+        // Add new
+        productData.id = Date.now();
+        inventory.push(productData);
+        showToast('Producto agregado', 'success');
     }
 
-    if (result) {
-        showToast(id ? 'Producto actualizado' : 'Producto agregado', 'success');
-        closeProductModal();
-        loadInventory();
-        loadDashboardData();
-    }
+    saveDataToStorage();
+    closeProductModal();
+    loadInventory();
+    loadDashboardData();
 }
 
-async function editProduct(id) {
-    const product = inventory.find(p => p.id === id);
+function editProduct(id) {
+    const product = inventory.find(p => p.id == id);
     if(product) openProductModal(product);
 }
 
-async function deleteProduct(id) {
+function deleteProduct(id) {
     if(confirm('¿Seguro que quieres eliminar este producto?')) {
-        const result = await fetchAPI(`products/${id}`, 'DELETE');
-        if(result) {
-            showToast('Producto eliminado', 'success');
-            loadInventory();
-            loadDashboardData();
-        }
+        inventory = inventory.filter(p => p.id != id);
+        saveDataToStorage();
+        showToast('Producto eliminado', 'success');
+        loadInventory();
+        loadDashboardData();
     }
 }
 
@@ -235,7 +277,7 @@ function filterPosProducts(query) {
 }
 
 function addToCart(productId) {
-    const product = inventory.find(p => p.id === productId);
+    const product = inventory.find(p => p.id == productId);
     if (!product) return;
     
     if (product.stock <= 0) {
@@ -243,7 +285,7 @@ function addToCart(productId) {
         return;
     }
 
-    const existing = cart.find(item => item.product_id === productId);
+    const existing = cart.find(item => item.product_id == productId);
     if (existing) {
         if(existing.quantity >= product.stock) {
             showToast('Stock máximo alcanzado', 'error');
@@ -262,8 +304,8 @@ function addToCart(productId) {
 }
 
 function updateCartQty(productId, delta) {
-    const item = cart.find(i => i.product_id === productId);
-    const product = inventory.find(p => p.id === productId);
+    const item = cart.find(i => i.product_id == productId);
+    const product = inventory.find(p => p.id == productId);
     
     if(item) {
         if (delta > 0 && item.quantity >= product.stock) {
@@ -273,7 +315,7 @@ function updateCartQty(productId, delta) {
         
         item.quantity += delta;
         if(item.quantity <= 0) {
-            cart = cart.filter(i => i.product_id !== productId);
+            cart = cart.filter(i => i.product_id != productId);
         }
         renderCart();
     }
@@ -316,7 +358,7 @@ function renderCart() {
     document.getElementById('cart-total').innerText = `$${total.toFixed(2)}`;
 }
 
-async function processSale() {
+function processSale() {
     if(cart.length === 0) {
         showToast('El carrito está vacío', 'error');
         return;
@@ -324,16 +366,47 @@ async function processSale() {
     document.getElementById('payment-modal').classList.add('show');
 }
 
-async function confirmPayment(method) {
+function confirmPayment(method) {
     document.getElementById('payment-modal').classList.remove('show');
     
-    const result = await fetchAPI('sales', 'POST', { items: cart, payment_method: method });
-    if(result) {
-        showToast(`Venta procesada exitosamente (${method})`, 'success');
-        clearCart();
-        loadInventory(); // Refresh stock
-        loadDashboardData(); // Refresh metrics
-    }
+    // Deduct stock
+    cart.forEach(item => {
+        const product = inventory.find(p => p.id == item.product_id);
+        if(product) {
+            product.stock -= item.quantity;
+        }
+    });
+    saveDataToStorage();
+
+    const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const saleId = Date.now();
+    const createdAt = new Date().toISOString();
+
+    // Save Sale
+    const sales = getSales();
+    sales.push({
+        id: saleId,
+        total_amount: totalAmount,
+        created_at: createdAt,
+        items: [...cart]
+    });
+    localStorage.setItem(KEYS.SALES, JSON.stringify(sales));
+
+    // Save Cash Flow
+    const cashFlow = getCashFlow();
+    cashFlow.push({
+        id: Date.now(),
+        transaction_type: 'IN',
+        amount: totalAmount,
+        reason: `Venta #${saleId} (${method})`,
+        created_at: createdAt
+    });
+    localStorage.setItem(KEYS.CASH_FLOW, JSON.stringify(cashFlow));
+
+    showToast(`Venta procesada exitosamente (${method})`, 'success');
+    clearCart();
+    loadInventory(); // Refresh stock UI
+    loadDashboardData(); // Refresh metrics
 }
 
 // Utils
