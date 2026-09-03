@@ -77,7 +77,15 @@ async function fetchAPI(endpoint, method = 'GET', body = null) {
         const options = { method, headers: { 'Content-Type': 'application/json' } };
         if (body) options.body = JSON.stringify(body);
         const res = await fetch(`/api/${endpoint}`, options);
-        if (!res.ok) throw new Error('API Error');
+        if (!res.ok) {
+            try {
+                const errorData = await res.json();
+                console.error("SERVER ERROR DETAILS:", errorData);
+            } catch (e) {
+                console.error("SERVER ERROR (Not JSON):", res.status);
+            }
+            throw new Error('API Error');
+        }
         return await res.json();
     } catch (err) {
         showToast('Error de conexión con el servidor en la nube', 'error');
