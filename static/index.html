@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POS MIPYMES - Sistema de Gestión</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Ionicons for modern icons -->
+    <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar glass-panel">
+            <div class="logo">
+                <ion-icon name="storefront"></ion-icon>
+                <span>POS MIPYMES</span>
+            </div>
+            <ul class="nav-links">
+                <li class="active" data-view="dashboard">
+                    <ion-icon name="grid-outline"></ion-icon>
+                    <span>Dashboard</span>
+                </li>
+                <li data-view="pos">
+                    <ion-icon name="cash-outline"></ion-icon>
+                    <span>Punto de Venta</span>
+                </li>
+                <li data-view="inventory">
+                    <ion-icon name="cube-outline"></ion-icon>
+                    <span>Inventario</span>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="top-header glass-panel">
+                <h1 id="view-title">Dashboard Principal</h1>
+                <div class="user-info">
+                    <div class="date-time" id="datetime-display"></div>
+                </div>
+            </header>
+
+            <!-- Dashboard View -->
+            <section id="view-dashboard" class="view-section active">
+                <div class="dashboard-cards">
+                    <div class="card glass-panel highlight-blue">
+                        <div class="card-icon"><ion-icon name="cash"></ion-icon></div>
+                        <div class="card-info">
+                            <h3>Ventas de Hoy</h3>
+                            <p id="dash-sales-today">$0.00</p>
+                        </div>
+                    </div>
+                    <div class="card glass-panel highlight-green">
+                        <div class="card-icon"><ion-icon name="wallet"></ion-icon></div>
+                        <div class="card-info">
+                            <h3>Flujo de Caja</h3>
+                            <p id="dash-cash-balance">$0.00</p>
+                        </div>
+                    </div>
+                    <div class="card glass-panel highlight-red">
+                        <div class="card-icon"><ion-icon name="alert-circle"></ion-icon></div>
+                        <div class="card-info">
+                            <h3>Alertas de Stock</h3>
+                            <p id="dash-stock-alerts">0</p>
+                        </div>
+                    </div>
+                    <div class="card glass-panel highlight-orange">
+                        <div class="card-icon"><ion-icon name="time"></ion-icon></div>
+                        <div class="card-info">
+                            <h3>Por Caducar</h3>
+                            <p id="dash-expiry-alerts">0</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="dashboard-details">
+                    <div class="details-panel glass-panel">
+                        <h2><ion-icon name="warning-outline"></ion-icon> Productos con Stock Bajo</h2>
+                        <div class="table-container">
+                            <table id="low-stock-table">
+                                <thead>
+                                    <tr>
+                                        <th>Producto</th>
+                                        <th>Stock Actual</th>
+                                        <th>Mínimo Permitido</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="details-panel glass-panel">
+                        <h2><ion-icon name="calendar-outline"></ion-icon> Próximos a Caducar</h2>
+                        <div class="table-container">
+                            <table id="expiry-table">
+                                <thead>
+                                    <tr>
+                                        <th>Producto</th>
+                                        <th>Fecha Caducidad</th>
+                                        <th>Stock</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- POS View -->
+            <section id="view-pos" class="view-section">
+                <div class="pos-container">
+                    <div class="pos-products glass-panel">
+                        <div class="search-bar">
+                            <ion-icon name="search-outline"></ion-icon>
+                            <input type="text" id="pos-search" placeholder="Buscar producto...">
+                        </div>
+                        <div class="product-grid" id="pos-product-list">
+                            <!-- Products generated dynamically -->
+                        </div>
+                    </div>
+                    <div class="pos-cart glass-panel">
+                        <h2>Cuenta Actual</h2>
+                        <div class="cart-items" id="cart-items-container">
+                            <!-- Cart items -->
+                        </div>
+                        <div class="cart-summary">
+                            <div class="summary-row">
+                                <span>Subtotal</span>
+                                <span id="cart-subtotal">$0.00</span>
+                            </div>
+                            <div class="summary-row total-row">
+                                <span>Total</span>
+                                <span id="cart-total">$0.00</span>
+                            </div>
+                            <button id="btn-checkout" class="btn btn-primary btn-large">
+                                <ion-icon name="checkmark-circle-outline"></ion-icon> Cobrar
+                            </button>
+                            <br>
+                            <button id="btn-clear-cart" class="btn btn-danger btn-large">Cancelar Venta</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Inventory View -->
+            <section id="view-inventory" class="view-section">
+                <div class="inventory-header">
+                    <div class="search-bar glass-panel">
+                        <ion-icon name="search-outline"></ion-icon>
+                        <input type="text" id="inv-search" placeholder="Buscar en inventario...">
+                    </div>
+                    <button class="btn btn-primary" id="btn-add-product">
+                        <ion-icon name="add-outline"></ion-icon> Nuevo Producto
+                    </button>
+                </div>
+                
+                <div class="glass-panel table-container">
+                    <table class="inventory-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Nombre</th>
+                                <th>Costo</th>
+                                <th>Precio Venta</th>
+                                <th>Stock</th>
+                                <th>Caducidad</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventory-list">
+                            <!-- Dynamic rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal: Add/Edit Product -->
+    <div id="product-modal" class="modal">
+        <div class="modal-content glass-panel">
+            <div class="modal-header">
+                <h2 id="modal-title">Agregar Producto</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <form id="product-form">
+                <input type="hidden" id="prod-id">
+                <div class="form-group">
+                    <label>Nombre del Producto</label>
+                    <input type="text" id="prod-name" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Precio Costo ($)</label>
+                        <input type="number" id="prod-cost" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Precio Venta ($)</label>
+                        <input type="number" id="prod-price" step="0.01" min="0" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Stock Actual</label>
+                        <input type="number" id="prod-stock" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Stock Mínimo (Alerta)</label>
+                        <input type="number" id="prod-min-stock" value="5" min="0" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Fecha de Caducidad (Opcional)</label>
+                    <input type="date" id="prod-expiry">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary close-modal-btn">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar Producto</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Modal: Payment Method -->
+    <div id="payment-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 400px; text-align: center;">
+            <div class="modal-header">
+                <h2 style="margin: 0 auto; color: var(--text-primary);">Método de Pago</h2>
+                <span class="close-modal" id="close-payment-modal">&times;</span>
+            </div>
+            <p style="margin-bottom: 24px; color: var(--text-secondary);">Selecciona cómo pagará el cliente:</p>
+            <div style="display: flex; gap: 16px; justify-content: center;">
+                <button class="btn btn-primary btn-large" onclick="confirmPayment('Efectivo')">
+                    <ion-icon name="cash-outline"></ion-icon> Efectivo
+                </button>
+                <button class="btn btn-secondary btn-large" style="background: rgba(16,185,129,0.2); color: #6ee7b7; border-color: #6ee7b7;" onclick="confirmPayment('Transferencia')">
+                    <ion-icon name="phone-portrait-outline"></ion-icon> Transferencia
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
