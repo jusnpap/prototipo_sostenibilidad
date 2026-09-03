@@ -1,10 +1,3 @@
-// LocalStorage Keys
-const KEYS = {
-    PRODUCTS: 'pos_products',
-    SALES: 'pos_sales',
-    CASH_FLOW: 'pos_cash_flow'
-};
-
 // Global State
 let inventory = [];
 let cart = [];
@@ -19,9 +12,6 @@ document.addEventListener('DOMContentLoaded', () => {
     updateDateTime();
     setInterval(updateDateTime, 1000);
     
-    // Initial data load
-    loadDataFromStorage();
-
     // Navigation
     navLinks.forEach(link => {
         link.addEventListener('click', () => {
@@ -30,14 +20,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Load initial data
+    loadDashboardData();
+    
     // Modals
     document.getElementById('btn-add-product').addEventListener('click', () => openProductModal());
     document.querySelectorAll('.close-modal, .close-modal-btn').forEach(btn => {
         btn.addEventListener('click', closeProductModal);
-    });
-    
-    document.getElementById('close-payment-modal').addEventListener('click', () => {
-        document.getElementById('payment-modal').classList.remove('show');
     });
 
     document.getElementById('product-form').addEventListener('submit', handleProductSubmit);
@@ -47,29 +36,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('inv-search').addEventListener('input', (e) => filterInventory(e.target.value));
     document.getElementById('btn-clear-cart').addEventListener('click', clearCart);
     document.getElementById('btn-checkout').addEventListener('click', processSale);
-});
-
-// Storage Functions
-function loadDataFromStorage() {
-    inventory = JSON.parse(localStorage.getItem(KEYS.PRODUCTS) || '[]');
-    // Ensure all products have IDs
-    inventory.forEach((p, i) => { if (!p.id) p.id = Date.now() + i; });
-    saveDataToStorage();
     
-    loadInventory();
-    loadDashboardData();
-}
-
-function saveDataToStorage() {
-    localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(inventory));
-}
-
-function getSales() {
-    return JSON.parse(localStorage.getItem(KEYS.SALES) || '[]');
-}
-function getCashFlow() {
-    return JSON.parse(localStorage.getItem(KEYS.CASH_FLOW) || '[]');
-}
+    document.getElementById('close-payment-modal').addEventListener('click', () => {
+        document.getElementById('payment-modal').classList.remove('show');
+    });
+});
 
 function updateDateTime() {
     const now = new Date();
@@ -100,44 +71,31 @@ function switchView(viewId, activeLink) {
     }
 }
 
-// Dashboard Logic
-function loadDashboardData() {
-    // 1. Low stock alerts
-    const lowStockAlerts = inventory.filter(p => p.stock <= p.min_stock);
-    
-    // 2. Expiring soon (within 30 days)
-    const now = new Date();
-    const thirtyDays = new Date();
-    thirtyDays.setDate(thirtyDays.getDate() + 30);
-    
-    const expiringSoon = inventory.filter(p => {
-        if (!p.expiry_date) return false;
-        const expiryDate = new Date(p.expiry_date);
-        return expiryDate <= thirtyDays;
-    });
+// API Calls
+async function fetchAPI(endpoint, method = 'GET', body = null) {
+    try {
+        const options = { method, headers: { 'Content-Type': 'application/json' } };
+        if (body) options.body = JSON.stringify(body);
+        const res = await fetch(`/api/${endpoint}`, options);
+        if (!res.ok) throw new Error('API Error');
+        return await res.json();
+    } catch (err) {
+        showToast('Error de conexión con el servidor en la nube', 'error');
+        console.error(err);
+        return null;
+    }
+}
 
-    // 3. Today's sales
-    const todayStr = new Date().toISOString().split('T')[0];
-    const sales = getSales();
-    const todaysSales = sales.filter(s => s.created_at.startsWith(todayStr))
-                             .reduce((sum, s) => sum + s.total_amount, 0);
+async function loadDashboardData() {
+    const data = await fetchAPI('dashboard');
+    if(!data) return;
 
-    // 4. Cash Flow
-    const cashFlow = getCashFlow();
-    const todaysCashIn = cashFlow.filter(c => c.transaction_type === 'IN' && c.created_at.startsWith(todayStr))
-                                 .reduce((sum, c) => sum + c.amount, 0);
-    const todaysCashOut = cashFlow.filter(c => c.transaction_type === 'OUT' && c.created_at.startsWith(todayStr))
-                                  .reduce((sum, c) => sum + c.amount, 0);
-    
-    const cashBalance = todaysCashIn - todaysCashOut;
+    document.getElementById('dash-sales-today').innerText = `$${data.todays_sales.toFixed(2)}`;
+    document.getElementById('dash-cash-balance').innerText = `$${data.cash_balance.toFixed(2)}`;
+    document.getElementById('dash-stock-alerts').innerText = data.low_stock_alerts.length;
+    document.getElementById('dash-expiry-alerts').innerText = data.expiring_soon_alerts.length;
 
-    // Update UI
-    document.getElementById('dash-sales-today').innerText = `$${todaysSales.toFixed(2)}`;
-    document.getElementById('dash-cash-balance').innerText = `$${cashBalance.toFixed(2)}`;
-    document.getElementById('dash-stock-alerts').innerText = lowStockAlerts.length;
-    document.getElementById('dash-expiry-alerts').innerText = expiringSoon.length;
-
-    renderTable('low-stock-table', lowStockAlerts, (item) => `
+    renderTable('low-stock-table', data.low_stock_alerts, (item) => `
         <tr>
             <td>${item.name}</td>
             <td><span class="status-badge status-danger">${item.stock}</span></td>
@@ -145,7 +103,7 @@ function loadDashboardData() {
         </tr>
     `);
 
-    renderTable('expiry-table', expiringSoon, (item) => `
+    renderTable('expiry-table', data.expiring_soon_alerts, (item) => `
         <tr>
             <td>${item.name}</td>
             <td><span class="status-badge status-warning">${item.expiry_date}</span></td>
@@ -154,9 +112,13 @@ function loadDashboardData() {
     `);
 }
 
-function loadInventory() {
-    renderInventoryList(inventory);
-    renderPosProducts(inventory);
+async function loadInventory() {
+    const data = await fetchAPI('products');
+    if(data) {
+        inventory = data;
+        renderInventoryList(inventory);
+        renderPosProducts(inventory);
+    }
 }
 
 // Inventory Logic
@@ -174,8 +136,8 @@ function renderInventoryList(products) {
                 <td><span class="status-badge ${p.stock <= p.min_stock ? 'status-danger' : ''}" style="${p.stock > p.min_stock ? 'background:rgba(16,185,129,0.2); color:#6ee7b7' : ''}">${p.stock}</span></td>
                 <td>${p.expiry_date || '-'}</td>
                 <td>
-                    <button class="btn-icon" onclick="editProduct(${p.id})"><ion-icon name="create-outline"></ion-icon></button>
-                    <button class="btn-icon" style="color:var(--danger-color)" onclick="deleteProduct(${p.id})"><ion-icon name="trash-outline"></ion-icon></button>
+                    <button class="btn-icon" onclick="editProduct('${p.id}')"><ion-icon name="create-outline"></ion-icon></button>
+                    <button class="btn-icon" style="color:var(--danger-color)" onclick="deleteProduct('${p.id}')"><ion-icon name="trash-outline"></ion-icon></button>
                 </td>
             </tr>
         `;
@@ -209,10 +171,10 @@ function closeProductModal() {
     document.getElementById('product-modal').classList.remove('show');
 }
 
-function handleProductSubmit(e) {
+async function handleProductSubmit(e) {
     e.preventDefault();
     const id = document.getElementById('prod-id').value;
-    const productData = {
+    const data = {
         name: document.getElementById('prod-name').value,
         cost_price: parseFloat(document.getElementById('prod-cost').value),
         sale_price: parseFloat(document.getElementById('prod-price').value),
@@ -221,38 +183,34 @@ function handleProductSubmit(e) {
         expiry_date: document.getElementById('prod-expiry').value
     };
 
+    let result;
     if (id) {
-        // Edit existing
-        const index = inventory.findIndex(p => p.id == id);
-        if(index > -1) {
-            inventory[index] = { ...inventory[index], ...productData };
-            showToast('Producto actualizado', 'success');
-        }
+        result = await fetchAPI(`products/${id}`, 'PUT', data);
     } else {
-        // Add new
-        productData.id = Date.now();
-        inventory.push(productData);
-        showToast('Producto agregado', 'success');
+        result = await fetchAPI('products', 'POST', data);
     }
 
-    saveDataToStorage();
-    closeProductModal();
-    loadInventory();
-    loadDashboardData();
+    if (result) {
+        showToast(id ? 'Producto actualizado' : 'Producto agregado', 'success');
+        closeProductModal();
+        loadInventory();
+        loadDashboardData();
+    }
 }
 
-function editProduct(id) {
+async function editProduct(id) {
     const product = inventory.find(p => p.id == id);
     if(product) openProductModal(product);
 }
 
-function deleteProduct(id) {
+async function deleteProduct(id) {
     if(confirm('¿Seguro que quieres eliminar este producto?')) {
-        inventory = inventory.filter(p => p.id != id);
-        saveDataToStorage();
-        showToast('Producto eliminado', 'success');
-        loadInventory();
-        loadDashboardData();
+        const result = await fetchAPI(`products/${id}`, 'DELETE');
+        if(result) {
+            showToast('Producto eliminado', 'success');
+            loadInventory();
+            loadDashboardData();
+        }
     }
 }
 
@@ -262,7 +220,7 @@ function renderPosProducts(products) {
     grid.innerHTML = '';
     products.forEach(p => {
         grid.innerHTML += `
-            <div class="product-card" onclick="addToCart(${p.id})">
+            <div class="product-card" onclick="addToCart('${p.id}')">
                 <h4>${p.name}</h4>
                 <div class="price">$${p.sale_price.toFixed(2)}</div>
                 <div class="stock">Stock disponible: ${p.stock}</div>
@@ -345,9 +303,9 @@ function renderCart() {
                     <p>$${item.price.toFixed(2)} c/u</p>
                 </div>
                 <div class="cart-item-controls">
-                    <button class="qty-btn" onclick="updateCartQty(${item.product_id}, -1)">-</button>
+                    <button class="qty-btn" onclick="updateCartQty('${item.product_id}', -1)">-</button>
                     <span>${item.quantity}</span>
-                    <button class="qty-btn" onclick="updateCartQty(${item.product_id}, 1)">+</button>
+                    <button class="qty-btn" onclick="updateCartQty('${item.product_id}', 1)">+</button>
                 </div>
                 <div class="item-total">$${subtotal.toFixed(2)}</div>
             </div>
@@ -366,47 +324,16 @@ function processSale() {
     document.getElementById('payment-modal').classList.add('show');
 }
 
-function confirmPayment(method) {
+async function confirmPayment(method) {
     document.getElementById('payment-modal').classList.remove('show');
     
-    // Deduct stock
-    cart.forEach(item => {
-        const product = inventory.find(p => p.id == item.product_id);
-        if(product) {
-            product.stock -= item.quantity;
-        }
-    });
-    saveDataToStorage();
-
-    const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const saleId = Date.now();
-    const createdAt = new Date().toISOString();
-
-    // Save Sale
-    const sales = getSales();
-    sales.push({
-        id: saleId,
-        total_amount: totalAmount,
-        created_at: createdAt,
-        items: [...cart]
-    });
-    localStorage.setItem(KEYS.SALES, JSON.stringify(sales));
-
-    // Save Cash Flow
-    const cashFlow = getCashFlow();
-    cashFlow.push({
-        id: Date.now(),
-        transaction_type: 'IN',
-        amount: totalAmount,
-        reason: `Venta #${saleId} (${method})`,
-        created_at: createdAt
-    });
-    localStorage.setItem(KEYS.CASH_FLOW, JSON.stringify(cashFlow));
-
-    showToast(`Venta procesada exitosamente (${method})`, 'success');
-    clearCart();
-    loadInventory(); // Refresh stock UI
-    loadDashboardData(); // Refresh metrics
+    const result = await fetchAPI('sales', 'POST', { items: cart, payment_method: method });
+    if(result) {
+        showToast(`Venta procesada exitosamente (${method})`, 'success');
+        clearCart();
+        loadInventory(); // Refresh stock
+        loadDashboardData(); // Refresh metrics
+    }
 }
 
 // Utils
