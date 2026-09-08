@@ -313,3 +313,25 @@ input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); curso
 /* Inventory header */
 .inventory-header { display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;}
 .inventory-header .search-bar { width: 350px; }
+
+/* Print Styles for Ticket */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    #ticket-content, #ticket-content * {
+        visibility: visible;
+    }
+    #ticket-content {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+    }
+    .no-print {
+        display: none !important;
+    }
+}

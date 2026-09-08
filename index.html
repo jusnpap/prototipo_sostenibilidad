@@ -11,7 +11,31 @@
     <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
 </head>
 <body>
-    <div class="app-container">
+    <!-- Login Screen -->
+    <div id="login-section" class="app-container" style="justify-content: center; align-items: center; background: radial-gradient(at top left, rgba(59, 130, 246, 0.2) 0px, transparent 50%), radial-gradient(at bottom right, rgba(16, 185, 129, 0.2) 0px, transparent 50%);">
+        <div class="glass-panel" style="width: 100%; max-width: 400px; padding: 40px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <ion-icon name="storefront" style="font-size: 3rem; color: var(--primary-color);"></ion-icon>
+                <h2 style="margin-top: 10px;">Iniciar Sesión</h2>
+                <p style="color: var(--text-secondary); font-size: 0.9rem;">Accede al sistema POS MIPYMES</p>
+            </div>
+            <form id="login-form">
+                <div class="form-group">
+                    <label>Usuario</label>
+                    <input type="text" id="login-username" required placeholder="admin o vendedor">
+                </div>
+                <div class="form-group" style="margin-bottom: 24px;">
+                    <label>Contraseña</label>
+                    <input type="password" id="login-password" required placeholder="Contraseña">
+                </div>
+                <button type="submit" class="btn btn-primary btn-large">
+                    <ion-icon name="log-in-outline"></ion-icon> Entrar al Sistema
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div id="main-app" class="app-container" style="display: none;">
         <!-- Sidebar Navigation -->
         <nav class="sidebar glass-panel">
             <div class="logo">
@@ -19,17 +43,21 @@
                 <span>POS MIPYMES</span>
             </div>
             <ul class="nav-links">
-                <li class="active" data-view="dashboard">
+                <li class="active" data-view="dashboard" id="nav-dashboard">
                     <ion-icon name="grid-outline"></ion-icon>
                     <span>Dashboard</span>
                 </li>
-                <li data-view="pos">
+                <li data-view="pos" id="nav-pos">
                     <ion-icon name="cash-outline"></ion-icon>
                     <span>Punto de Venta</span>
                 </li>
-                <li data-view="inventory">
+                <li data-view="inventory" id="nav-inventory">
                     <ion-icon name="cube-outline"></ion-icon>
                     <span>Inventario</span>
+                </li>
+                <li data-view="logs" id="nav-logs">
+                    <ion-icon name="list-outline"></ion-icon>
+                    <span>Registro Actividad</span>
                 </li>
             </ul>
         </nav>
@@ -39,8 +67,15 @@
             <!-- Header -->
             <header class="top-header glass-panel">
                 <h1 id="view-title">Dashboard Principal</h1>
-                <div class="user-info">
+                <div class="user-info" style="display: flex; align-items: center; gap: 20px;">
                     <div class="date-time" id="datetime-display"></div>
+                    <div style="display: flex; align-items: center; gap: 8px; color: var(--text-secondary);">
+                        <ion-icon name="person-circle-outline" style="font-size: 1.4rem;"></ion-icon>
+                        <span id="current-user-display">Usuario</span>
+                    </div>
+                    <button class="btn btn-secondary" id="btn-logout" style="padding: 6px 12px; font-size: 0.85rem;">
+                        <ion-icon name="log-out-outline"></ion-icon> Salir
+                    </button>
                 </div>
             </header>
 
@@ -145,7 +180,12 @@
                                 <ion-icon name="checkmark-circle-outline"></ion-icon> Cobrar
                             </button>
                             <br>
-                            <button id="btn-clear-cart" class="btn btn-danger btn-large">Cancelar Venta</button>
+                            <div style="display: flex; gap: 10px;">
+                                <button id="btn-clear-cart" class="btn btn-danger" style="flex: 1;">Cancelar</button>
+                                <button id="btn-close-register" class="btn btn-secondary" style="flex: 1; border-color: var(--warning-color); color: var(--warning-color);">
+                                    <ion-icon name="wallet-outline"></ion-icon> Cierre de Caja
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -177,6 +217,25 @@
                             </tr>
                         </thead>
                         <tbody id="inventory-list">
+                            <!-- Dynamic rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Logs View (Activity Register) -->
+            <section id="view-logs" class="view-section">
+                <div class="glass-panel table-container">
+                    <table class="inventory-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha y Hora</th>
+                                <th>Acción</th>
+                                <th>Usuario</th>
+                                <th>Razón / Detalle</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-list">
                             <!-- Dynamic rows -->
                         </tbody>
                     </table>
@@ -222,6 +281,10 @@
                     <label>Fecha de Caducidad (Opcional)</label>
                     <input type="date" id="prod-expiry">
                 </div>
+                <div class="form-group" id="prod-reason-container">
+                    <label>Razón de la modificación/adición <span style="color: var(--danger-color);">*</span></label>
+                    <input type="text" id="prod-reason" placeholder="Ej: Nuevo lote, corrección de inventario..." required>
+                </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary close-modal-btn">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Guardar Producto</button>
@@ -249,9 +312,73 @@
         </div>
     </div>
 
+    <!-- Modal: Delete Reason -->
+    <div id="delete-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 400px;">
+            <div class="modal-header">
+                <h2>Eliminar Producto</h2>
+                <span class="close-modal" id="close-delete-modal">&times;</span>
+            </div>
+            <form id="delete-form">
+                <input type="hidden" id="delete-prod-id">
+                <p style="margin-bottom: 16px; color: var(--text-secondary);">¿Por qué estás eliminando este producto?</p>
+                <div class="form-group">
+                    <label>Razón de eliminación <span style="color: var(--danger-color);">*</span></label>
+                    <input type="text" id="delete-reason" placeholder="Ej: Producto dañado, descatalogado..." required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancel-delete">Cancelar</button>
+                    <button type="submit" class="btn btn-danger"><ion-icon name="trash-outline"></ion-icon> Eliminar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Ticket de Venta -->
+    <div id="ticket-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 350px; text-align: center;">
+            <div id="ticket-content" style="background: white; color: black; padding: 20px; text-align: left; font-family: monospace; border-radius: 4px; margin-bottom: 20px;">
+                <h3 style="text-align: center; margin-bottom: 10px; border-bottom: 1px dashed black; padding-bottom: 10px;">POS MIPYMES</h3>
+                <p style="font-size: 0.8rem; text-align: center; margin-bottom: 15px;" id="ticket-date">Fecha: -</p>
+                <div id="ticket-items" style="margin-bottom: 15px; font-size: 0.9rem;">
+                    <!-- Items -->
+                </div>
+                <div style="border-top: 1px dashed black; padding-top: 10px; font-weight: bold; font-size: 1.1rem; display: flex; justify-content: space-between;">
+                    <span>TOTAL</span>
+                    <span id="ticket-total">$0.00</span>
+                </div>
+                <p style="font-size: 0.8rem; text-align: center; margin-top: 20px; color: #555;">¡Gracias por su compra!<br>Le atendió: <span id="ticket-vendor"></span></p>
+            </div>
+            <div style="display: flex; gap: 12px; justify-content: center;" class="no-print">
+                <button class="btn btn-secondary" id="close-ticket-modal">Cerrar</button>
+                <button class="btn btn-primary" id="btn-print-ticket"><ion-icon name="print-outline"></ion-icon> Imprimir</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Cierre de Caja -->
+    <div id="cierre-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 400px; text-align: center;">
+            <div class="modal-header">
+                <h2 style="margin: 0 auto; color: var(--warning-color);">Cierre de Turno</h2>
+                <span class="close-modal" id="close-cierre-modal">&times;</span>
+            </div>
+            <div style="padding: 20px 0;">
+                <ion-icon name="wallet" style="font-size: 4rem; color: var(--warning-color); margin-bottom: 10px;"></ion-icon>
+                <h3 style="margin-bottom: 5px;">Total Recaudado</h3>
+                <p style="font-size: 2.5rem; font-weight: bold; color: white;" id="cierre-total">$0.00</p>
+                <p style="color: var(--text-secondary); margin-top: 10px;">¿Confirmas que deseas cerrar este turno?</p>
+            </div>
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button class="btn btn-secondary" id="cancel-cierre">Cancelar</button>
+                <button class="btn btn-primary" id="confirm-cierre" style="background: var(--warning-color); color: #000;">Confirmar Cierre</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toast-container"></div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
 </body>
 </html>

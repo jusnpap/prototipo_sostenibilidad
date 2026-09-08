@@ -1,6 +1,8 @@
 // Global State
 let inventory = [];
 let cart = [];
+let currentUser = null;
+let sessionSalesTotal = 0;
 
 // DOM Elements
 const views = document.querySelectorAll('.view-section');
@@ -20,16 +22,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Load initial data
-    loadDashboardData();
-    
+    // Login Form
+    document.getElementById('login-form').addEventListener('submit', handleLogin);
+    document.getElementById('btn-logout').addEventListener('click', logout);
+
     // Modals
     document.getElementById('btn-add-product').addEventListener('click', () => openProductModal());
     document.querySelectorAll('.close-modal, .close-modal-btn').forEach(btn => {
-        btn.addEventListener('click', closeProductModal);
+        btn.addEventListener('click', () => {
+            closeProductModal();
+            document.getElementById('delete-modal').classList.remove('show');
+            document.getElementById('ticket-modal').classList.remove('show');
+            document.getElementById('cierre-modal').classList.remove('show');
+        });
     });
 
     document.getElementById('product-form').addEventListener('submit', handleProductSubmit);
+    
+    // Delete Modal
+    document.getElementById('cancel-delete').addEventListener('click', () => document.getElementById('delete-modal').classList.remove('show'));
+    document.getElementById('delete-form').addEventListener('submit', confirmDeleteProduct);
 
     // POS
     document.getElementById('pos-search').addEventListener('input', (e) => filterPosProducts(e.target.value));
@@ -40,7 +52,64 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('close-payment-modal').addEventListener('click', () => {
         document.getElementById('payment-modal').classList.remove('show');
     });
+
+    // Ticket & Cierre
+    document.getElementById('close-ticket-modal').addEventListener('click', () => document.getElementById('ticket-modal').classList.remove('show'));
+    document.getElementById('btn-print-ticket').addEventListener('click', () => window.print());
+    
+    document.getElementById('btn-close-register').addEventListener('click', openCierreModal);
+    document.getElementById('cancel-cierre').addEventListener('click', () => document.getElementById('cierre-modal').classList.remove('show'));
+    document.getElementById('confirm-cierre').addEventListener('click', confirmCierreCaja);
 });
+
+// Authentication
+function handleLogin(e) {
+    e.preventDefault();
+    const user = document.getElementById('login-username').value;
+    const pass = document.getElementById('login-password').value;
+
+    if (user === 'admin' && pass === 'admin123') {
+        currentUser = { username: 'Admin', role: 'admin' };
+    } else if (user === 'vendedor' && pass === 'vendedor123') {
+        currentUser = { username: 'Vendedor', role: 'vendedor' };
+    } else {
+        showToast('Credenciales incorrectas', 'error');
+        return;
+    }
+
+    document.getElementById('login-section').style.display = 'none';
+    document.getElementById('main-app').style.display = 'flex';
+    document.getElementById('current-user-display').innerText = currentUser.username;
+    
+    sessionSalesTotal = 0;
+    applyPermissions();
+    logAction('Inicio de sesión', `El usuario ${currentUser.username} ingresó al sistema.`);
+}
+
+function logout() {
+    logAction('Cierre de sesión', `El usuario ${currentUser.username} salió del sistema.`);
+    currentUser = null;
+    clearCart();
+    document.getElementById('main-app').style.display = 'none';
+    document.getElementById('login-section').style.display = 'flex';
+    document.getElementById('login-form').reset();
+}
+
+function applyPermissions() {
+    const navDash = document.getElementById('nav-dashboard');
+    const navLogs = document.getElementById('nav-logs');
+    const navPos = document.getElementById('nav-pos');
+    
+    if (currentUser.role === 'vendedor') {
+        navDash.style.display = 'none';
+        navLogs.style.display = 'none';
+        switchView('pos', navPos);
+    } else {
+        navDash.style.display = 'flex';
+        navLogs.style.display = 'flex';
+        switchView('dashboard', navDash);
+    }
+}
 
 function updateDateTime() {
     const now = new Date();
@@ -60,7 +129,8 @@ function switchView(viewId, activeLink) {
     const titleMap = {
         'dashboard': 'Dashboard Principal',
         'pos': 'Punto de Venta (Caja)',
-        'inventory': 'Gestión de Inventario'
+        'inventory': 'Gestión de Inventario',
+        'logs': 'Registro de Actividad'
     };
     viewTitle.innerText = titleMap[viewId];
 
@@ -68,6 +138,8 @@ function switchView(viewId, activeLink) {
         loadInventory();
     } else if (viewId === 'dashboard') {
         loadDashboardData();
+    } else if (viewId === 'logs') {
+        loadLogs();
     }
 }
 
@@ -126,7 +198,42 @@ async function loadInventory() {
         inventory = data;
         renderInventoryList(inventory);
         renderPosProducts(inventory);
+        
+        // Detect expired items for audit log
+        const today = new Date().toISOString().split('T')[0];
+        data.forEach(p => {
+            if (p.expiry_date && p.expiry_date < today) {
+                // To avoid spamming, we could log it only if not logged recently, but for now we just log
+                // logAction('Producto Vencido', `El producto ${p.name} caducó el ${p.expiry_date}`);
+            }
+        });
     }
+}
+
+async function loadLogs() {
+    const logs = await fetchAPI('logs');
+    if (logs) {
+        renderTable('logs-list', logs, (log) => {
+            const date = new Date(log.date);
+            const dateStr = date.toLocaleString('es-ES');
+            return `
+                <tr>
+                    <td>${dateStr}</td>
+                    <td><strong>${log.action}</strong></td>
+                    <td><ion-icon name="person-circle-outline"></ion-icon> ${log.user}</td>
+                    <td>${log.reason}</td>
+                </tr>
+            `;
+        }, 'view-logs');
+    }
+}
+
+async function logAction(action, reason) {
+    await fetchAPI('logs', 'POST', {
+        action: action,
+        user: currentUser ? currentUser.username : 'Sistema',
+        reason: reason
+    });
 }
 
 // Inventory Logic
@@ -159,6 +266,8 @@ function filterInventory(query) {
 
 function openProductModal(product = null) {
     document.getElementById('product-modal').classList.add('show');
+    document.getElementById('prod-reason').value = '';
+    
     if (product) {
         document.getElementById('modal-title').innerText = 'Editar Producto';
         document.getElementById('prod-id').value = product.id;
@@ -182,8 +291,11 @@ function closeProductModal() {
 async function handleProductSubmit(e) {
     e.preventDefault();
     const id = document.getElementById('prod-id').value;
+    const name = document.getElementById('prod-name').value;
+    const reason = document.getElementById('prod-reason').value;
+    
     const data = {
-        name: document.getElementById('prod-name').value,
+        name: name,
         cost_price: parseFloat(document.getElementById('prod-cost').value),
         sale_price: parseFloat(document.getElementById('prod-price').value),
         stock: parseInt(document.getElementById('prod-stock').value),
@@ -194,8 +306,10 @@ async function handleProductSubmit(e) {
     let result;
     if (id) {
         result = await fetchAPI(`products/${id}`, 'PUT', data);
+        logAction('Editar Producto', `Producto ${name} editado. Razón: ${reason}`);
     } else {
         result = await fetchAPI('products', 'POST', data);
+        logAction('Agregar Producto', `Producto ${name} agregado. Razón: ${reason}`);
     }
 
     if (result) {
@@ -212,10 +326,26 @@ async function editProduct(id) {
 }
 
 async function deleteProduct(id) {
-    if(confirm('¿Seguro que quieres eliminar este producto?')) {
+    const product = inventory.find(p => p.id == id);
+    if(product) {
+        document.getElementById('delete-prod-id').value = id;
+        document.getElementById('delete-reason').value = '';
+        document.getElementById('delete-modal').classList.add('show');
+    }
+}
+
+async function confirmDeleteProduct(e) {
+    e.preventDefault();
+    const id = document.getElementById('delete-prod-id').value;
+    const reason = document.getElementById('delete-reason').value;
+    const product = inventory.find(p => p.id == id);
+    
+    if (product) {
         const result = await fetchAPI(`products/${id}`, 'DELETE');
         if(result) {
+            logAction('Eliminar Producto', `Producto ${product.name} eliminado. Razón: ${reason}`);
             showToast('Producto eliminado', 'success');
+            document.getElementById('delete-modal').classList.remove('show');
             loadInventory();
             loadDashboardData();
         }
@@ -338,15 +468,62 @@ async function confirmPayment(method) {
     const result = await fetchAPI('sales', 'POST', { items: cart, payment_method: method });
     if(result) {
         showToast(`Venta procesada exitosamente (${method})`, 'success');
+        
+        let total = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+        sessionSalesTotal += total;
+        
+        logAction('Venta Realizada', `Venta procesada por $${total.toFixed(2)} (${method})`);
+        
+        showTicketModal(cart, total);
+        
         clearCart();
         loadInventory(); // Refresh stock
         loadDashboardData(); // Refresh metrics
     }
 }
 
+function showTicketModal(soldItems, total) {
+    const modal = document.getElementById('ticket-modal');
+    const itemsContainer = document.getElementById('ticket-items');
+    
+    document.getElementById('ticket-date').innerText = `Fecha: ${new Date().toLocaleString('es-ES')}`;
+    document.getElementById('ticket-vendor').innerText = currentUser.username;
+    document.getElementById('ticket-total').innerText = `$${total.toFixed(2)}`;
+    
+    itemsContainer.innerHTML = '';
+    soldItems.forEach(item => {
+        itemsContainer.innerHTML += `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <span>${item.quantity}x ${item.name}</span>
+                <span>$${(item.price * item.quantity).toFixed(2)}</span>
+            </div>
+        `;
+    });
+    
+    modal.classList.add('show');
+}
+
+function openCierreModal() {
+    document.getElementById('cierre-total').innerText = `$${sessionSalesTotal.toFixed(2)}`;
+    document.getElementById('cierre-modal').classList.add('show');
+}
+
+function confirmCierreCaja() {
+    logAction('Cierre de Caja', `Turno cerrado con un total recaudado de $${sessionSalesTotal.toFixed(2)}`);
+    showToast('Caja cerrada exitosamente', 'success');
+    document.getElementById('cierre-modal').classList.remove('show');
+    logout();
+}
+
 // Utils
-function renderTable(tableId, data, rowTemplate) {
-    const tbody = document.querySelector(`#${tableId} tbody`);
+function renderTable(tableId, data, rowTemplate, viewId = null) {
+    // If a viewId is passed, only find the table inside that view to avoid ID conflicts
+    const tbody = viewId 
+        ? document.querySelector(`#${viewId} #${tableId} tbody`) || document.querySelector(`#${tableId}`) 
+        : document.querySelector(`#${tableId} tbody`) || document.querySelector(`#${tableId}`);
+        
+    if (!tbody) return;
+    
     tbody.innerHTML = '';
     if(data.length === 0) {
         tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-secondary)">Todo en orden</td></tr>`;
