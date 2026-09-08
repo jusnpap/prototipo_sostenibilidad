@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-close-register').addEventListener('click', openCierreModal);
     document.getElementById('cancel-cierre').addEventListener('click', () => document.getElementById('cierre-modal').classList.remove('show'));
     document.getElementById('confirm-cierre').addEventListener('click', confirmCierreCaja);
+    document.getElementById('egreso-form').addEventListener('submit', handleEgresoSubmit);
 });
 
 // Authentication
@@ -503,13 +504,64 @@ function showTicketModal(soldItems, total) {
     modal.classList.add('show');
 }
 
-function openCierreModal() {
-    document.getElementById('cierre-total').innerText = `$${sessionSalesTotal.toFixed(2)}`;
+let currentCashflowNet = 0;
+
+async function openCierreModal() {
     document.getElementById('cierre-modal').classList.add('show');
+    
+    // Fetch today's cashflow
+    const data = await fetchAPI('cashflow');
+    if (data) {
+        let totalIn = 0;
+        let totalOut = 0;
+        
+        renderTable('cashflow-list', data, (item) => {
+            const time = new Date(item.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+            const isIngreso = item.transaction_type === 'IN';
+            const color = isIngreso ? 'var(--success-color)' : 'var(--danger-color)';
+            const sign = isIngreso ? '+' : '-';
+            
+            if (isIngreso) totalIn += item.amount;
+            else totalOut += item.amount;
+            
+            return `
+                <tr>
+                    <td style="padding: 5px;">${time}</td>
+                    <td style="padding: 5px;">${item.reason}</td>
+                    <td style="padding: 5px; color: ${color}; font-weight: bold;">${sign}$${item.amount.toFixed(2)}</td>
+                </tr>
+            `;
+        });
+
+        currentCashflowNet = totalIn - totalOut;
+        
+        document.getElementById('cierre-in').innerText = `$${totalIn.toFixed(2)}`;
+        document.getElementById('cierre-out').innerText = `$${totalOut.toFixed(2)}`;
+        document.getElementById('cierre-neto').innerText = `$${currentCashflowNet.toFixed(2)}`;
+    }
+}
+
+async function handleEgresoSubmit(e) {
+    e.preventDefault();
+    const amount = document.getElementById('egreso-monto').value;
+    const reason = document.getElementById('egreso-motivo').value;
+    
+    const result = await fetchAPI('cashflow', 'POST', {
+        amount: amount,
+        reason: reason,
+        user: currentUser ? currentUser.username : 'Sistema'
+    });
+    
+    if (result) {
+        showToast('Egreso registrado', 'success');
+        document.getElementById('egreso-form').reset();
+        openCierreModal(); // Refresh modal data
+        loadDashboardData(); // Refresh main dashboard if admin
+    }
 }
 
 function confirmCierreCaja() {
-    logAction('Cierre de Caja', `Turno cerrado con un total recaudado de $${sessionSalesTotal.toFixed(2)}`);
+    logAction('Cierre de Caja', `Turno cerrado con un saldo neto en caja de $${currentCashflowNet.toFixed(2)}`);
     showToast('Caja cerrada exitosamente', 'success');
     document.getElementById('cierre-modal').classList.remove('show');
     logout();
